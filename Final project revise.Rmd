@@ -1,0 +1,229 @@
+---
+title: "Final project revise"
+author: "YuanChengSu"
+output: html_document
+---
+```{r}
+Summer_full <- read.csv("D:/siuol456/Documents/NEU/Predictive Analysis/F/olympic-games/summer.csv",stringsAsFactors = F)
+Country_info <- read.csv("D:/siuol456/Documents/NEU/Predictive Analysis/F/olympic-games/dictionary.csv",stringsAsFactors = F)
+head(Summer_full)
+```
+#remove the team subjects
+```{r}
+library(dplyr)
+Summer_ct <- Summer_full[!duplicated(Summer_full[,-5]),]
+head(Summer_ct)
+```
+#for the time series, we only need data after 1940
+```{r}
+Summer_WW2<- Summer_ct[Summer_ct$Year>"1940",] 
+head(Summer_WW2)
+```
+
+#create the count function
+```{r}
+count_metal <- function(x){
+  gold <- 0
+  silver <- 0
+  bronze <- 0
+  for (i in row.names(x)) {
+    m <- x[i,9]
+    if(m=="Gold"){
+      gold=gold+1
+    }
+    if(m=="Silver"){
+      silver=silver+1
+    }
+    if(m=="Bronze"){
+      bronze=bronze+1
+    }
+  }
+  r<- c(gold,silver,bronze)
+  return(r)
+}
+```
+#apply the function on all the country
+```{r}
+Summer_Country <- c()
+for (c in Country_info$Code) {
+  z <- count_metal(Summer_WW2[Summer_WW2$Country==c,])
+  Summer_Country<-rbind(Summer_Country,z)
+}
+Summer_Country<- data.frame(Summer_Country)
+colnames(Summer_Country) <- c("Gold","Silver","Bronze")
+Summer_Country[,"Total"] <- Summer_Country$Gold+Summer_Country$Silver+Summer_Country$Bronze
+Summer_Country$Code<-Country_info$Code
+head(Summer_Country)
+```
+#fit the hosting city to country code
+```{r}
+olympics_city <- c("Chamonix","St.Moritz","Lake Placid","Garmisch Partenkirchen","Oslo","Cortina d'Ampezzo","Squaw Valley","Innsbruck","Grenoble","Sapporo","Sarajevo","Calgary","Albertville","Lillehammer","Nagano","Salt Lake City","Turin","Vancouver", "Sochi","Athens","Paris","St Louis", "London", "Stockholm" ,"Antwerp","Amsterdam","Los Angeles","Berlin","Helsinki","Melbourne / Stockholm","Rome","Tokyo","Mexico","Munich","Montreal","Moscow","Seoul","Barcelona","Atlanta","Sydney","Beijing")
+host_dict <- list("Chamonix" = "France", "Grenoble" = "France", "Paris" = "France","St.Moritz" = "Switzerland", "Lake Placid" = "United States","Squaw Valley" = "United States", "Albertville" = "United States","Salt Lake City" = "United States","St Louis" = "United States", "Los Angeles" = "United States","Atlanta" = "United States", "Garmisch Partenkirchen" = "Germany","Berlin" ="Germany","Munich" = "Germany","Oslo" = "Norway","Lillehammer" = "Norway", "Cortina d'Ampezzo"="Italy","Turin" ="Italy","Rome"="Italy","Innsbruck" = "Austria","Sapporo" ="Japan","Nagano" ="Japan","Tokyo" ="Japan","Sarajevo" = "Bosnia and Herzegovina","Calgary" ="Canada","Vancouver" ="Canada","Montreal" ="Canada","Sochi" ="Russia","Moscow" ="Russia","Athens" ="Greece", "London"= "United Kingdom","Stockholm" ="Sweden" , "Antwerp"="Belgium" , "Amsterdam"="Netherlands" , "Helsinki"="Finland" ,"Melbourne" ="Australia","Sydney"="Australia","Mexico"="Mexico","Seoul" = "Korea, South","Barcelona"="Spain","Beijing" = "China")
+Country_dict <- c()
+count <- c()
+for (code in Country_info$Code) {
+  count <- c(count,Country_info[Country_info$Code==code,"Country"])
+  Country_dict <- c(Country_dict,code)
+}
+Country_dict <- as.list(Country_dict)
+names(Country_dict) <- count
+for (city in olympics_city){
+  Summer_full$host_country[Summer_full$City==city] <- host_dict[city]
+}
+Summer_full$host_country<- as.character(Summer_full$host_country)
+for (country in count){
+  if(country %in% Summer_full$host_country){
+     Summer_full$host_code[Summer_full$host_country==country] <- Country_dict[country]
+  }
+}
+Summer_full$host_code <- as.character(Summer_full$host_code)
+head(Summer_full)
+```
+#perform hypotheses testing for the hosting effect using t test
+```{r}
+hp <- c()
+p_f <-c()
+Summer_full[Summer_full$host_code=="NULL","host_code"]<- "AUS"
+Summer_ct<-Summer_full
+for(hc in levels(as.factor(Summer_ct$host_code))){
+  hp <- c(hp,hc)
+  hy <- c()
+  nhy <- c()
+  for (y in levels(as.factor(Summer_ct$Year))) {
+    y <- as.numeric(y)
+    check <- as.character(levels(as.factor(Summer_ct[Summer_ct$Year==y,"host_code"])))
+    if(check==hc){
+      mc <- count_metal(Summer_ct[Summer_ct$Year==y,])
+      hcmc <- count_metal(Summer_ct[Summer_ct$Year==y&Summer_ct$Country==hc,])
+      r <- hcmc/mc
+      hy <- rbind(hy,r)
+    }
+    else{
+      mc <- count_metal(Summer_ct[Summer_ct$Year==y,])
+      hcmc <- count_metal(Summer_ct[Summer_ct$Year==y&Summer_ct$Country==hc,])
+      r <- hcmc/mc
+      nhy <- rbind(nhy,r)
+    }
+  }
+  p <- c()
+  for (md in 1:3) {
+    testing <- t.test(nhy[,md],mu=mean(hy[,md]),alternative = "less")
+    p <-c(p,testing$p.value)
+  }
+  p_f <- rbind(p_f,p)
+}
+p_r <- data.frame(p_f)
+p_r$code <- hp
+names(p_r)<- c("Gold","Silver","Bronze","code")
+p_r
+```
+#perform hypotheses testing for the hosting effect using chisq test
+```{r message=FALSE, warning=FALSE}
+hp <- c()
+p_f <-c()
+for(hc in levels(as.factor(Summer_ct$host_code))){
+  hp <- c(hp,hc)
+  hy <- c()
+  nhy <- c()
+  for (y in levels(as.factor(Summer_ct$Year))) {
+    y <- as.numeric(y)
+    check <- as.character(levels(as.factor(Summer_ct[Summer_ct$Year==y,"host_code"])))
+    if(check==hc){
+      mc <- count_metal(Summer_ct[Summer_ct$Year==y,])
+      hcmc <- count_metal(Summer_ct[Summer_ct$Year==y&Summer_ct$Country==hc,])
+      #r <- hcmc/mc
+      hy <- rbind(hy,mc)
+    }
+    else{
+      mc <- count_metal(Summer_ct[Summer_ct$Year==y,])
+      hcmc <- count_metal(Summer_ct[Summer_ct$Year==y&Summer_ct$Country==hc,])
+      #r <- hcmc/mc
+      nhy <- rbind(nhy,mc)
+    }
+  }
+  nhy <- data.frame(nhy)
+  md_mean <- c()
+  for (md in 1:3) {
+    md_mean <- c(md_mean,mean(hy[,md]))
+  }
+  p <- c()
+  for (rn in 1:length(row.names(nhy))) {
+    if(sum(nhy[rn,]==0)!=3){
+      M <- rbind(nhy[rn,],md_mean)
+      testing <- chisq.test(M)
+      p <-c(p,testing$p.value)
+    }
+  }
+  p_f <- c(p_f,mean(p))
+}
+p_r <- data.frame(p_f)
+p_r$code <- hp
+names(p_r)<- c("P","code")
+p_r
+```
+#ARIMA
+```{r}
+library('forecast')
+library('tseries')
+Jpn_medal <- Summer_WW2[Summer_WW2$Country=="JPN",]
+US_medal <- Summer_WW2[Summer_WW2$Country=="USA",]
+CHN_medal<- Summer_WW2[Summer_WW2$Country=="CHN",]
+```
+#A function for yearly medal
+```{r}
+time_medal <- function(x){
+  yearly_medal <- c()
+  Years <-c()
+  for (y in levels(as.factor(x$Year))) {
+    y<-as.integer(y)
+    Years <- c(Years,y)
+    medal <- count_metal(x[x$Year==y,])
+    yearly_medal <- rbind(yearly_medal,medal)
+  }
+  yearly_medal<- data.frame(yearly_medal)
+  colnames(yearly_medal) <- c("Gold","Silver","Bronze")
+  yearly_medal[,"Year"] <- Years
+  return(yearly_medal)
+}
+```
+#
+```{r}
+US_t <- time_medal(US_medal)
+JPN_t<- time_medal(Jpn_medal)
+CHN_t <- time_medal(CHN_medal)
+```
+#Create a function for ARIMA forecasting plot
+```{r}
+plot_ARIMA <- function(x){
+  par(mfrow=c(3,1))
+  g <- c("Gold","Silver","Bronze")
+  pred <- c()
+  for (i in 1:3) {
+    ts_md<- ts(x[,i],start = x$Year[1],frequency = 0.25)
+    fit<-arima(ts_md,order=c(1,1,0))
+    fcast <- forecast(fit, h=2)
+    ti <- sprintf("Forecast for %s",g[i])
+    plot(fcast, main = ti)
+    fc <- fcast$mean
+    pred <- rbind(pred,fc)
+  }
+  pred <- data.frame(pred)
+  colnames(pred) <- c("2016","2020")
+  row.names(pred) <- g
+  par(mfrow=c(1,1))
+  pred
+}
+```
+#
+```{r}
+plot_ARIMA(US_t)
+```
+#
+```{r}
+plot_ARIMA(JPN_t)
+```
+#
+```{r}
+plot_ARIMA(CHN_t)
+```
+
